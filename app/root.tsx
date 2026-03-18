@@ -36,6 +36,9 @@ function AppHeader() {
       <NavbarItem href="/admin">
         <NavbarLabel>Admin</NavbarLabel>
       </NavbarItem>
+      <NavbarItem href="/engine">
+        <NavbarLabel>Engine</NavbarLabel>
+      </NavbarItem>
     </header>
   )
 }
