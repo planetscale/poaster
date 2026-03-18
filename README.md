@@ -54,6 +54,8 @@ cp .env.template .env
 
 ```env
 DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+API_KEY=                          # API key for the onramp load generator
+ONRAMP_URL=http://localhost:8080  # onramp server address (default shown)
 ```
 
 ### Set up the database
@@ -102,6 +104,7 @@ app/
 ├── routes/               # File-based route handlers
 │   ├── _index.tsx        # Homepage: virtualized, polled feed
 │   ├── admin.tsx         # Admin dashboard: runs heavy analytics reports
+│   ├── engine.tsx        # Engine dashboard: controls onramp load generator
 │   ├── api.posts.ts      # GET /api/posts — infinite scroll loader
 │   ├── api.posts.count.ts # GET /api/posts/count — polling endpoint
 │   ├── posts.$postId.tsx # Post detail page
@@ -150,6 +153,22 @@ horizon and preventing VACUUM from cleaning dead tuples from high-churn tables �
 which is what causes the fast path to degrade over time.
 
 All slow-path queries are tagged with `/* action='analytics' */`.
+
+### Engine dashboard (load generator)
+
+The `/engine` route is a control panel for **onramp**, a virtual-user load
+generator that runs query flows against the database. It requires the
+`ONRAMP_URL` and `API_KEY` environment variables.
+
+The dashboard has three panels:
+
+- **Hammer** — start/stop the simulation with a single click
+- **User Config** — tune spawn rates (`NewUsersPerSecond`,
+  `DeletedUsersPerSecond`), flow delay, and the min/max active-user bounds
+- **Flows** — edit named query flows as JSON. Each flow has a `Weight`
+  (relative probability) and a list of SQL `Queries` written as Go templates.
+  Available template variables: `{{.UserID}}`, `{{Name}}`, `{{Email}}`,
+  `{{Word}}`, `{{Sentence N}}`, `{{UUID}}`
 
 ### Traffic Control
 
