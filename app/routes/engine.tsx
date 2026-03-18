@@ -59,26 +59,30 @@ async function onrampFetch(path: string, init?: RequestInit) {
 
 export async function loader() {
   try {
-    const [configRes, flowsRes] = await Promise.all([
+    const [configRes, flowsRes, activeRes] = await Promise.all([
       onrampFetch('/users'),
       onrampFetch('/users/flows'),
+      onrampFetch('/users/current'),
     ])
 
-    if (!configRes.ok || !flowsRes.ok) {
+    if (!configRes.ok || !flowsRes.ok || !activeRes.ok) {
       return data({
         config: null as UserConfig | null,
         flows: null as Flow[] | null,
+        activeUsers: null as number | null,
         error: 'onramp returned an error — is it running?',
       })
     }
 
     const config: UserConfig = await configRes.json()
     const flows: Flow[] = await flowsRes.json()
-    return data({ config, flows, error: null })
+    const activeUsers: number = await activeRes.json()
+    return data({ config, flows, activeUsers, error: null })
   } catch (err) {
     return data({
       config: null as UserConfig | null,
       flows: null as Flow[] | null,
+      activeUsers: null as number | null,
       error: err instanceof Error ? err.message : 'Failed to connect to onramp',
     })
   }
@@ -173,7 +177,7 @@ export async function action({ request }: Route.ActionArgs) {
 // ---------------------------------------------------------------------------
 
 export default function EnginePage({ loaderData }: Route.ComponentProps) {
-  const { config, flows, error } = loaderData
+  const { config, flows, activeUsers, error } = loaderData
 
   if (error) {
     return (
@@ -200,7 +204,7 @@ export default function EnginePage({ loaderData }: Route.ComponentProps) {
 
       <Divider />
 
-      <ConfigEditor initialConfig={config!} />
+      <ConfigEditor initialConfig={config!} activeUsers={activeUsers!} />
 
       <Divider />
 
@@ -257,7 +261,7 @@ function HammerControls() {
 // User config editor
 // ---------------------------------------------------------------------------
 
-function ConfigEditor({ initialConfig }: { initialConfig: UserConfig }) {
+function ConfigEditor({ initialConfig, activeUsers }: { initialConfig: UserConfig; activeUsers: number }) {
   // UserFlowDelay arrives in nanoseconds; display/edit in milliseconds
   const nsToMs = (ns: number) => ns / 1_000_000
   const msToNs = (ms: number) => Math.round(ms * 1_000_000)
@@ -298,7 +302,7 @@ function ConfigEditor({ initialConfig }: { initialConfig: UserConfig }) {
       <div className="flex items-center justify-between gap-4">
         <Subheading level={2}>User Config</Subheading>
         <Badge color="zinc">
-          {cfg.TotalUsers} active user{cfg.TotalUsers !== 1 ? 's' : ''}
+          {activeUsers} active user{activeUsers !== 1 ? 's' : ''}
         </Badge>
       </div>
       <Text className="mt-1 text-sm">
