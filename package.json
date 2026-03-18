@@ -1,0 +1,54 @@
+{
+  "name": "react-router-starter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "react-router build",
+    "dev": "react-router dev",
+    "start": "react-router-serve ./build/server/index.js",
+    "typecheck": "react-router typegen && tsc",
+    "lint": "pnpm dlx oxlint@latest --fix",
+    "format": "prettier --write .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@headlessui/react": "^2.2.9",
+    "@heroicons/react": "^2.2.0",
+    "@react-router/fs-routes": "^7.10.0",
+    "@react-router/node": "^7.9.2",
+    "@react-router/serve": "^7.9.2",
+    "@tanstack/react-virtual": "^3.13.23",
+    "boring-avatars": "^2.0.4",
+    "dotenv": "^17.3.1",
+    "drizzle-orm": "^0.45.1",
+    "isbot": "^5.1.31",
+    "motion": "^12.23.24",
+    "pg": "^8.16.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router": "^7.9.2",
+    "sonner": "^2.0.7"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^7.9.2",
+    "@tailwindcss/vite": "^4.1.13",
+    "@types/node": "^22",
+    "@types/pg": "^8.18.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "clsx": "^2.1.1",
+    "drizzle-kit": "^0.31.9",
+    "prettier": "^3.7.4",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vite-tsconfig-paths": "^5.1.4"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "printWidth": 80
+  }
+}

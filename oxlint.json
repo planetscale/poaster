@@ -1,0 +1,5 @@
+{
+  "rules": {
+    "eslint/sort-imports": "warn"
+  }
+}
