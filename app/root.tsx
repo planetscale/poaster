@@ -88,7 +88,12 @@ function isDatabaseError(error: unknown): boolean {
     msg.includes('econnrefused') ||
     msg.includes('econnreset') ||
     msg.includes('too many clients') ||
-    msg.includes('remaining connection slots')
+    msg.includes('remaining connection slots') ||
+    // PostgreSQL server-side errors under genuine DB overload
+    msg.includes('canceling statement') ||
+    msg.includes('statement timeout') ||
+    msg.includes('server closed the connection unexpectedly') ||
+    msg.includes('overwhelmed')
   )
 }
 
