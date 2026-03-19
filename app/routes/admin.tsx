@@ -186,7 +186,7 @@ function FireAllButton() {
         color="red"
         onClick={() => {
           const newKeys = REPORTS.flatMap((r) =>
-            Array.from({ length: 10 }, () => makeReportKey(r.id)),
+            Array.from({ length: 3 }, () => makeReportKey(r.id)),
           )
           setKeys((prev) => [...prev, ...newKeys])
         }}

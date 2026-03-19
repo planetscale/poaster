@@ -1,4 +1,4 @@
-import { pool } from '~/db'
+import { analyticsPool } from '~/db'
 import { getCommentedClient, sqlCommenter } from '~/db/sql-commenter'
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,15 @@ export interface AnalyticsResult {
  * that PlanetScale Traffic Control can identify and govern this class
  * of workload independently from the fast CRUD path.
  */
+/**
+ * How many extra seconds to hold the transaction open after the heavy
+ * query completes. This simulates a realistic analytics pipeline that
+ * does post-processing (formatting, writing multiple summary tables,
+ * etc.) while still holding its transaction — and keeps the MVCC
+ * horizon pinned longer, amplifying dead-tuple bloat.
+ */
+const POST_QUERY_HOLD_SECONDS = 30
+
 async function runAnalyticsQuery(
   name: string,
   sql: string,
@@ -50,7 +59,7 @@ async function runAnalyticsQuery(
       queryGroup: 'analytics',
     },
     async () => {
-      const client = await getCommentedClient(pool)
+      const client = await getCommentedClient(analyticsPool)
       try {
         await client.query('BEGIN')
 
@@ -63,6 +72,12 @@ async function runAnalyticsQuery(
         await client.query(`INSERT INTO report_snapshots (name) VALUES ($1)`, [
           `${name}: ${rows.length} rows at ${new Date().toISOString()}`,
         ])
+
+        // Hold the transaction open to simulate post-processing work.
+        // This keeps the connection occupied on the database server and
+        // extends MVCC horizon pinning — a single query now ties up
+        // server resources for 40-55 seconds total.
+        await client.query(`SELECT pg_sleep(${POST_QUERY_HOLD_SECONDS})`)
 
         await client.query('COMMIT')
       } catch (err) {
@@ -340,7 +355,7 @@ export async function seedActivityData(): Promise<{
       queryGroup: 'analytics',
     },
     async () => {
-      const client = await getCommentedClient(pool)
+      const client = await getCommentedClient(analyticsPool)
       try {
         // Insert 2M rows in a single bulk INSERT using generate_series
         await client.query(`
