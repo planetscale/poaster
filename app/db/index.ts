@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { drizzle } from 'drizzle-orm/node-postgres'
 
+import { postgresUrlForNode } from './postgres-url'
 import * as schema from './schema'
 import { createCommentedPool } from './sql-commenter'
 
@@ -10,8 +11,8 @@ if (!process.env.DATABASE_URL) {
 
 /** pg Pool with automatic SQLCommenter tag injection. */
 export const pool = createCommentedPool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: true,
+  connectionString: postgresUrlForNode(process.env.DATABASE_URL),
+  ssl: { rejectUnauthorized: true },
   /**
    * Fail fast when all connections are held by long-running analytics
    * queries. Without this, pending requests queue indefinitely inside

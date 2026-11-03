@@ -4,7 +4,6 @@ import { useRevalidator } from 'react-router'
 import { toast } from 'sonner'
 
 import type { Route } from './+types/_index'
-import { Switch } from '~/components/switch'
 import { CountdownTimer } from '~/components/countdown-timer'
 import {
   FeedItemCard,
@@ -13,6 +12,7 @@ import {
 } from '~/components/feed-item-card'
 import { FeedLayout } from '~/components/feed-layout'
 import { NewPostsBanner } from '~/components/new-posts-banner'
+import { Switch } from '~/components/switch'
 import { TrendingTopics } from '~/components/trending-topics'
 import type { FeedItem } from '~/db/queries'
 import { fetchFeedItems, getTrendingTags } from '~/db/queries'
@@ -68,17 +68,22 @@ export async function loader() {
 function useAutoMode(
   revalidator: ReturnType<typeof useRevalidator>,
   setNewPostCount: React.Dispatch<React.SetStateAction<number>>,
+  initialLastChecked: string,
 ) {
   const [autoMode, setAutoMode] = useState(false)
 
   const autoModeRef = useRef(autoMode)
-  autoModeRef.current = autoMode
-
-  /** Ref-backed setter so callers don't need autoMode in deps. */
   const newPostCountRef = useRef(0)
-  const lastCheckedRef = useRef<string>('')
+  const lastCheckedRef = useRef(initialLastChecked)
   const revalidatorRef = useRef(revalidator)
-  revalidatorRef.current = revalidator
+
+  useEffect(() => {
+    autoModeRef.current = autoMode
+  }, [autoMode])
+
+  useEffect(() => {
+    revalidatorRef.current = revalidator
+  }, [revalidator])
 
   /** Hydrate from localStorage after mount to avoid SSR mismatch. */
   useEffect(() => {
@@ -96,7 +101,7 @@ function useAutoMode(
       lastCheckedRef.current = new Date().toISOString()
       revalidatorRef.current.revalidate()
     }
-  }, [autoMode])
+  }, [autoMode, setNewPostCount])
 
   return {
     autoMode,
@@ -117,17 +122,21 @@ function useAutoMode(
  */
 function usePolling(
   autoModeRef: React.RefObject<boolean>,
-  lastCheckedRef: React.MutableRefObject<string>,
-  newPostCountRef: React.MutableRefObject<number>,
+  lastCheckedRef: React.RefObject<string | null>,
+  newPostCountRef: React.RefObject<number>,
   revalidator: ReturnType<typeof useRevalidator>,
   setNewPostCount: React.Dispatch<React.SetStateAction<number>>,
 ) {
   const revalidatorRef = useRef(revalidator)
-  revalidatorRef.current = revalidator
+
+  useEffect(() => {
+    revalidatorRef.current = revalidator
+  }, [revalidator])
 
   return useCallback(async (): Promise<'ok' | 'error'> => {
     try {
-      const url = `/api/posts/count?since=${encodeURIComponent(lastCheckedRef.current)}`
+      const since = lastCheckedRef.current ?? ''
+      const url = `/api/posts/count?since=${encodeURIComponent(since)}`
       const res = await fetch(url, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       })
@@ -163,69 +172,53 @@ function usePolling(
 }
 
 /**
- * Watches the virtualizer's last visible item and fetches the next
- * page of older items via `/api/posts` when the user scrolls near
- * the bottom.
+ * Stagger indices for items that appeared after the first paint.
+ * Keys that already animated are promoted into the seen set when the
+ * loader data changes, so a refresh does not replay their fade-in.
  */
-function useInfiniteScroll(
-  allItems: FeedItem[],
-  hasMore: boolean,
-  setExtraItems: React.Dispatch<React.SetStateAction<FeedItem[]>>,
-  setHasMore: React.Dispatch<React.SetStateAction<boolean>>,
-  setLoadError: React.Dispatch<React.SetStateAction<string | null>>,
-  lastItemIndex: number | undefined,
-) {
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
+function useFeedAnimation(items: FeedItem[], loaderKey: string) {
+  const animatedKeysRef = useRef<Set<string> | null>(null)
+  if (animatedKeysRef.current === null) {
+    animatedKeysRef.current = new Set()
+  }
 
-  /** Ref keeps allItems fresh inside the callback without re-creating it. */
-  const allItemsRef = useRef(allItems)
-  allItemsRef.current = allItems
+  const [seenKeys, setSeenKeys] = useState(
+    () => new Set(items.map(feedItemKey)),
+  )
+  const [seenLoaderKey, setSeenLoaderKey] = useState(loaderKey)
 
-  const loadMore = useCallback(async () => {
-    if (!hasMore) return
-    setIsLoadingMore(true)
-    setLoadError(null)
-
-    try {
-      const items = allItemsRef.current
-      const oldest = items[items.length - 1]
-      if (!oldest) return
-
-      const oldestDate = feedItemDate(oldest)
-      const url = `/api/posts?before=${encodeURIComponent(oldestDate)}`
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      })
-      if (!res.ok) {
-        setLoadError('Failed to load more posts. Try scrolling again.')
-        return
-      }
-
-      const json = (await res.json()) as {
-        items: FeedItem[]
-        hasMore: boolean
-      }
-      setExtraItems((prev) => [...prev, ...json.items])
-      setHasMore(json.hasMore)
-    } catch {
-      setLoadError('Network error. Try scrolling again.')
-    } finally {
-      setIsLoadingMore(false)
+  if (loaderKey !== seenLoaderKey) {
+    const nextSeen = new Set(seenKeys)
+    const animated = animatedKeysRef.current
+    if (animated) {
+      for (const key of animated) nextSeen.add(key)
     }
-  }, [hasMore, setExtraItems, setHasMore, setLoadError])
+    setSeenLoaderKey(loaderKey)
+    setSeenKeys(nextSeen)
+  }
 
+  const seen = loaderKey === seenLoaderKey ? seenKeys : undefined
+  const indexByKey = new Map<string, number>()
+  if (seen) {
+    let nextIndex = 0
+    for (const item of items) {
+      const key = feedItemKey(item)
+      if (seen.has(key) || indexByKey.has(key)) continue
+      indexByKey.set(key, nextIndex)
+      nextIndex += 1
+    }
+  }
+
+  const signature = [...indexByKey.keys()].join('\0')
   useEffect(() => {
-    if (lastItemIndex === undefined) return
-    if (
-      lastItemIndex >= allItemsRef.current.length - 5 &&
-      hasMore &&
-      !isLoadingMore
-    ) {
-      loadMore()
-    }
-  }, [lastItemIndex, hasMore, isLoadingMore, loadMore])
+    const animated = animatedKeysRef.current
+    if (!animated) return
+    animated.clear()
+    if (signature.length === 0) return
+    for (const key of signature.split('\0')) animated.add(key)
+  }, [signature])
 
-  return { isLoadingMore }
+  return indexByKey
 }
 
 // ---------------------------------------------------------------------------
@@ -262,12 +255,10 @@ const VirtualRow = memo(function VirtualRow({
       style={{ transform: `translateY(${start - scrollMargin}px)` }}
     >
       <div
+        className={animationIndex >= 0 ? 'feed-item-enter' : undefined}
         style={
           animationIndex >= 0
-            ? {
-                animation: 'feed-fade-in 0.3s ease-out both',
-                animationDelay: `${animationIndex * STAGGER_DELAY_MS}ms`,
-              }
+            ? { animationDelay: `${animationIndex * STAGGER_DELAY_MS}ms` }
             : undefined
         }
       >
@@ -276,6 +267,225 @@ const VirtualRow = memo(function VirtualRow({
     </div>
   )
 })
+
+type FeedToolbarProps = {
+  newPostCount: number
+  onLoadNewPosts: () => void
+  autoMode: boolean
+  onAutoModeChange: (checked: boolean) => void
+  onCountdownComplete: () => void
+}
+
+function FeedToolbar({
+  newPostCount,
+  onLoadNewPosts,
+  autoMode,
+  onAutoModeChange,
+  onCountdownComplete,
+}: FeedToolbarProps) {
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <h1 className="text-lg font-semibold text-zinc-950 dark:text-white">
+        For you
+      </h1>
+      <div className="flex items-center gap-3">
+        <NewPostsBanner count={newPostCount} onLoad={onLoadNewPosts} />
+        <label className="flex items-center gap-1.5">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">Auto</span>
+          <Switch
+            checked={autoMode}
+            onChange={onAutoModeChange}
+            color="sky"
+            name="autoMode"
+          />
+        </label>
+        <CountdownTimer onComplete={onCountdownComplete} size={16} />
+      </div>
+    </div>
+  )
+}
+
+type FeedStreamProps = {
+  initialItems: FeedItem[]
+  initialHasMore: boolean
+  loaderKey: string
+}
+
+/**
+ * Virtualized feed plus infinite scroll. Pagination state resets when
+ * `loaderKey` changes so a revalidation drops client-appended pages.
+ */
+function FeedStream({
+  initialItems,
+  initialHasMore,
+  loaderKey,
+}: FeedStreamProps) {
+  const [extraItems, setExtraItems] = useState<FeedItem[]>([])
+  const [hasMore, setHasMore] = useState(initialHasMore)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [pageKey, setPageKey] = useState(loaderKey)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+
+  if (loaderKey !== pageKey) {
+    setPageKey(loaderKey)
+    setExtraItems((current) => (current.length === 0 ? current : []))
+    setHasMore(initialHasMore)
+    setLoadError(null)
+  }
+
+  const visibleExtra = loaderKey === pageKey ? extraItems : []
+  const visibleHasMore = loaderKey === pageKey ? hasMore : initialHasMore
+  const allItems = [...initialItems, ...visibleExtra]
+  const animationIndexByKey = useFeedAnimation(allItems, loaderKey)
+
+  const listRef = useRef<HTMLDivElement>(null)
+  const allItemsRef = useRef<FeedItem[] | null>(null)
+
+  const virtualizer = useWindowVirtualizer({
+    count: allItems.length,
+    estimateSize: (index) => {
+      const item = allItems[index]
+      // Comment items are taller — parent post + connecting line + comment
+      return item?.type === 'comment' ? 260 : 120
+    },
+    overscan: 10,
+    scrollMargin: listRef.current?.offsetTop ?? 0,
+  })
+
+  const virtualItems = virtualizer.getVirtualItems()
+  const lastItemIndex = virtualItems[virtualItems.length - 1]?.index
+
+  useEffect(() => {
+    allItemsRef.current = allItems
+  })
+
+  const loadMore = useCallback(async () => {
+    if (!visibleHasMore) return
+    setIsLoadingMore(true)
+    setLoadError(null)
+
+    try {
+      const items = allItemsRef.current ?? []
+      const oldest = items[items.length - 1]
+      if (!oldest) return
+
+      const oldestDate = feedItemDate(oldest)
+      const url = `/api/posts?before=${encodeURIComponent(oldestDate)}`
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      })
+      if (!res.ok) {
+        setLoadError('Failed to load more posts. Try scrolling again.')
+        return
+      }
+
+      const json = (await res.json()) as {
+        items: FeedItem[]
+        hasMore: boolean
+      }
+      setExtraItems((prev) => [...prev, ...json.items])
+      setHasMore(json.hasMore)
+    } catch {
+      setLoadError('Network error. Try scrolling again.')
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [visibleHasMore])
+
+  useEffect(() => {
+    if (lastItemIndex === undefined) return
+    const itemCount = allItemsRef.current?.length ?? 0
+    if (lastItemIndex >= itemCount - 5 && visibleHasMore && !isLoadingMore) {
+      void loadMore()
+    }
+  }, [lastItemIndex, visibleHasMore, isLoadingMore, loadMore])
+
+  if (allItems.length === 0) {
+    return (
+      <p className="py-12 text-center text-sm text-zinc-500 dark:text-zinc-400">
+        No posts yet. They&apos;ll appear here once created.
+      </p>
+    )
+  }
+
+  return (
+    <FeedVirtualList
+      listRef={listRef}
+      virtualizer={virtualizer}
+      virtualItems={virtualItems}
+      allItems={allItems}
+      animationIndexByKey={animationIndexByKey}
+      isLoadingMore={isLoadingMore}
+      loadError={loadError}
+      hasMore={visibleHasMore}
+    />
+  )
+}
+
+type FeedVirtualListProps = {
+  listRef: React.RefObject<HTMLDivElement | null>
+  virtualizer: ReturnType<typeof useWindowVirtualizer>
+  virtualItems: ReturnType<
+    ReturnType<typeof useWindowVirtualizer>['getVirtualItems']
+  >
+  allItems: FeedItem[]
+  animationIndexByKey: Map<string, number>
+  isLoadingMore: boolean
+  loadError: string | null
+  hasMore: boolean
+}
+
+function FeedVirtualList({
+  listRef,
+  virtualizer,
+  virtualItems,
+  allItems,
+  animationIndexByKey,
+  isLoadingMore,
+  loadError,
+  hasMore,
+}: FeedVirtualListProps) {
+  return (
+    <>
+      <div
+        ref={listRef}
+        className="relative w-full"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
+        {virtualItems.map((virtualRow) => {
+          const item = allItems[virtualRow.index]
+          return (
+            <VirtualRow
+              key={feedItemKey(item)}
+              item={item}
+              start={virtualRow.start}
+              scrollMargin={virtualizer.options.scrollMargin}
+              index={virtualRow.index}
+              measureElement={virtualizer.measureElement}
+              animationIndex={animationIndexByKey.get(feedItemKey(item)) ?? -1}
+            />
+          )
+        })}
+      </div>
+
+      {isLoadingMore ? (
+        <p className="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+          Loading more posts...
+        </p>
+      ) : null}
+
+      {loadError ? (
+        <p className="py-4 text-center text-sm text-red-500">{loadError}</p>
+      ) : null}
+
+      {!hasMore && allItems.length > 0 ? (
+        <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">
+          You&apos;ve reached the end.
+        </p>
+      ) : null}
+    </>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -314,85 +524,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     autoModeRef,
     newPostCountRef,
     lastCheckedRef,
-  } = useAutoMode(revalidator, setNewPostCount)
+  } = useAutoMode(revalidator, setNewPostCount, initialLastChecked)
 
-  // Seed lastCheckedRef on mount only. After that, the polling callback
-  // and handleLoadNewPosts manage the ref — syncing from loaderData on
-  // every render would overwrite the ref during intermediate re-renders
-  // caused by revalidator state transitions (idle → loading) before the
-  // loader returns new data, breaking auto-mode and manual refresh.
-  if (!lastCheckedRef.current) {
-    lastCheckedRef.current = initialLastChecked
-  }
-
-  // Extra items accumulated via infinite scroll
-  const [extraItems, setExtraItems] = useState<FeedItem[]>([])
-  const [hasMore, setHasMore] = useState(initialHasMore)
-  const [loadError, setLoadError] = useState<string | null>(null)
-
-  // Reset extra items when loader data changes (revalidation) via key
-  const loaderKey = initialItems.map(feedItemKey).join(',')
-  const prevLoaderKey = useRef(loaderKey)
-  useEffect(() => {
-    if (loaderKey !== prevLoaderKey.current) {
-      prevLoaderKey.current = loaderKey
-      setExtraItems([])
-      setHasMore(initialHasMore)
-    }
-  }, [loaderKey, initialHasMore])
-
-  const allItems = [...initialItems, ...extraItems]
-
-  // Animation tracking: IDs present at mount don't animate; new IDs do.
-  // On each revalidation we promote previously-animated keys into the
-  // "seen" set and clear the animation map so the CSS keyframe replays
-  // for genuinely new items.
-  const seenItemKeysRef = useRef<Set<string>>(
-    new Set(initialItems.map(feedItemKey)),
-  )
-  const animationMapRef = useRef<Map<string, number>>(new Map())
-  const prevAnimLoaderKey = useRef(loaderKey)
-
-  if (loaderKey !== prevAnimLoaderKey.current) {
-    // Promote old animated keys → seen so they won't re-animate.
-    for (const key of animationMapRef.current.keys()) {
-      seenItemKeysRef.current.add(key)
-    }
-    animationMapRef.current = new Map()
-    prevAnimLoaderKey.current = loaderKey
-  }
-
-  // Eagerly assign stagger indices for every new item in the list.
-  const allItemKeys = allItems.map(feedItemKey)
-  let nextIdx = animationMapRef.current.size
-  for (const key of allItemKeys) {
-    if (seenItemKeysRef.current.has(key)) continue
-    if (animationMapRef.current.has(key)) continue
-    animationMapRef.current.set(key, nextIdx++)
-  }
-
-  /** Stable lookup — never assigns, only reads. */
-  function getAnimationIndex(item: FeedItem): number {
-    return animationMapRef.current.get(feedItemKey(item)) ?? -1
-  }
-
-  // Virtualizer
-  const listRef = useRef<HTMLDivElement>(null)
-  const virtualizer = useWindowVirtualizer({
-    count: allItems.length,
-    estimateSize: (index) => {
-      const item = allItems[index]
-      // Comment items are taller — parent post + connecting line + comment
-      return item?.type === 'comment' ? 260 : 120
-    },
-    overscan: 10,
-    scrollMargin: listRef.current?.offsetTop ?? 0,
-  })
-
-  const virtualItems = virtualizer.getVirtualItems()
-  const lastItem = virtualItems[virtualItems.length - 1]
-
-  // Hooks
   const poll = usePolling(
     autoModeRef,
     lastCheckedRef,
@@ -406,28 +539,13 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     const result = await poll()
     if (result === 'ok') {
       consecutiveFailuresRef.current = 0
-    } else {
-      consecutiveFailuresRef.current++
-      if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
-        setFeedUnavailable(true)
-      }
+      return
+    }
+    consecutiveFailuresRef.current += 1
+    if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
+      setFeedUnavailable(true)
     }
   }, [poll])
-
-  const { isLoadingMore } = useInfiniteScroll(
-    allItems,
-    hasMore,
-    setExtraItems,
-    setHasMore,
-    setLoadError,
-    lastItem?.index,
-  )
-
-  // Throw during render to trigger the root ErrorBoundary (fail-whale).
-  // The error message contains "timeout" so isDatabaseError() matches.
-  if (feedUnavailable) {
-    throw new Error('Feed polling timeout — database connections exhausted')
-  }
 
   /** User clicked the "new posts" banner — revalidate the feed. */
   function handleLoadNewPosts() {
@@ -437,73 +555,26 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     revalidator.revalidate()
   }
 
+  if (feedUnavailable) {
+    throw new Error('Feed polling timeout — database connections exhausted')
+  }
+
+  const loaderKey = initialItems.map(feedItemKey).join(',')
+
   return (
     <FeedLayout sidebar={<TrendingTopics tags={trending} />}>
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-zinc-950 dark:text-white">
-          For you
-        </h1>
-        <div className="flex items-center gap-3">
-          <NewPostsBanner count={newPostCount} onLoad={handleLoadNewPosts} />
-          <label className="flex items-center gap-1.5">
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              Auto
-            </span>
-            <Switch
-              checked={autoMode}
-              onChange={setAutoMode}
-              color="sky"
-              name="autoMode"
-            />
-          </label>
-          <CountdownTimer onComplete={handleCountdownComplete} size={16} />
-        </div>
-      </div>
-
-      {allItems.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-500 dark:text-zinc-400">
-          No posts yet. They&apos;ll appear here once created.
-        </p>
-      ) : (
-        <>
-          <div
-            ref={listRef}
-            className="relative w-full"
-            style={{ height: virtualizer.getTotalSize() }}
-          >
-            {virtualItems.map((virtualRow) => {
-              const item = allItems[virtualRow.index]
-              return (
-                <VirtualRow
-                  key={feedItemKey(item)}
-                  item={item}
-                  start={virtualRow.start}
-                  scrollMargin={virtualizer.options.scrollMargin}
-                  index={virtualRow.index}
-                  measureElement={virtualizer.measureElement}
-                  animationIndex={getAnimationIndex(item)}
-                />
-              )
-            })}
-          </div>
-
-          {isLoadingMore && (
-            <p className="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              Loading more posts...
-            </p>
-          )}
-
-          {loadError ? (
-            <p className="py-4 text-center text-sm text-red-500">{loadError}</p>
-          ) : null}
-
-          {!hasMore && allItems.length > 0 ? (
-            <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">
-              You&apos;ve reached the end.
-            </p>
-          ) : null}
-        </>
-      )}
+      <FeedToolbar
+        newPostCount={newPostCount}
+        onLoadNewPosts={handleLoadNewPosts}
+        autoMode={autoMode}
+        onAutoModeChange={setAutoMode}
+        onCountdownComplete={handleCountdownComplete}
+      />
+      <FeedStream
+        initialItems={initialItems}
+        initialHasMore={initialHasMore}
+        loaderKey={loaderKey}
+      />
     </FeedLayout>
   )
 }

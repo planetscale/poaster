@@ -9,39 +9,41 @@ import { getTrendingTags, toPostCardData } from '~/db/queries'
 import { sqlCommenter } from '~/db/sql-commenter'
 import { tags } from '~/db/schema'
 
-export function meta({ data }: Route.MetaArgs) {
-  if (!data?.tag) {
+export function meta({ loaderData }: Route.MetaArgs) {
+  if (!loaderData?.tag) {
     return [{ title: 'Tag not found — Poaster' }]
   }
-  return [{ title: `#${data.tag.name} — Poaster` }]
+  return [{ title: `#${loaderData.tag.name} — Poaster` }]
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
   const [tag, trending] = await Promise.all([
-    sqlCommenter.run({ route: '/tags/:tagName', query: 'tagWithPosts' }, () =>
-      db.query.tags.findFirst({
-        where: eq(tags.name, params.tagName),
-        with: {
-          postTags: {
-            with: {
-              post: {
-                with: {
-                  user: {
-                    columns: { id: true, name: true },
-                  },
-                  comments: {
-                    columns: { id: true },
-                  },
-                  postTags: {
-                    columns: {},
-                    with: { tag: { columns: { name: true } } },
+    sqlCommenter.run(
+      { action: 'crud', route: '/tags/:tagName', query: 'tagWithPosts' },
+      () =>
+        db.query.tags.findFirst({
+          where: eq(tags.name, params.tagName),
+          with: {
+            postTags: {
+              with: {
+                post: {
+                  with: {
+                    user: {
+                      columns: { id: true, name: true },
+                    },
+                    comments: {
+                      columns: { id: true },
+                    },
+                    postTags: {
+                      columns: {},
+                      with: { tag: { columns: { name: true } } },
+                    },
                   },
                 },
               },
             },
           },
-        },
-      }),
+        }),
     ),
     getTrendingTags('/tags/:tagName'),
   ])

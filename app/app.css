@@ -46,6 +46,16 @@
   }
 }
 
+.feed-item-enter {
+  animation: feed-fade-in 0.3s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-item-enter {
+    animation: none;
+  }
+}
+
 html,
 body {
   @apply bg-white dark:bg-gray-950;

@@ -25,7 +25,7 @@ export async function loader({ request }: { request: Request }) {
   try {
     const [postResult, commentResult] = await Promise.all([
       sqlCommenter.run(
-        { route: '/api/posts/count', query: 'newPostCount' },
+        { action: 'crud', route: '/api/posts/count', query: 'newPostCount' },
         () =>
           db
             .select({ value: count() })
@@ -33,7 +33,7 @@ export async function loader({ request }: { request: Request }) {
             .where(and(gt(posts.createdAt, sinceDate))),
       ),
       sqlCommenter.run(
-        { route: '/api/posts/count', query: 'newCommentCount' },
+        { action: 'crud', route: '/api/posts/count', query: 'newCommentCount' },
         () =>
           db
             .select({ value: count() })

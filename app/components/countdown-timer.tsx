@@ -23,10 +23,13 @@ type CountdownTimerProps = {
  */
 export function CountdownTimer({ onComplete, size = 36 }: CountdownTimerProps) {
   const circleRef = useRef<SVGCircleElement>(null)
-  const startRef = useRef(Date.now())
-  const rafRef = useRef<number>(0)
+  const startRef = useRef(0)
+  const rafRef = useRef(0)
   const onCompleteRef = useRef(onComplete)
-  onCompleteRef.current = onComplete
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete
+  }, [onComplete])
 
   useEffect(() => {
     startRef.current = Date.now()

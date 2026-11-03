@@ -1,6 +1,7 @@
 import * as Headless from '@headlessui/react'
 import clsx from 'clsx'
-import { motion } from 'motion/react'
+import { LazyMotion, MotionConfig, domMax } from 'motion/react'
+import * as m from 'motion/react-m'
 import React, { forwardRef } from 'react'
 import { TouchTarget } from './button'
 import { Link } from './link'
@@ -40,33 +41,37 @@ export const NavbarItem = forwardRef(function NavbarItem(
   )
 
   return (
-    <span className={clsx(className, 'relative')}>
-      {current && (
-        <motion.span
-          layoutId="current-indicator"
-          className="absolute inset-x-2 -bottom-2.5 h-0.5 rounded-full bg-zinc-950 dark:bg-white"
-        />
-      )}
-      {typeof props.href === 'string' ? (
-        <Link
-          {...props}
-          className={classes}
-          data-current={current ? 'true' : undefined}
-          ref={ref as React.ForwardedRef<HTMLAnchorElement>}
-        >
-          <TouchTarget>{children}</TouchTarget>
-        </Link>
-      ) : (
-        <Headless.Button
-          {...props}
-          className={clsx('cursor-default', classes)}
-          data-current={current ? 'true' : undefined}
-          ref={ref}
-        >
-          <TouchTarget>{children}</TouchTarget>
-        </Headless.Button>
-      )}
-    </span>
+    <MotionConfig reducedMotion="user">
+      <LazyMotion features={domMax}>
+        <span className={clsx(className, 'relative')}>
+          {current && (
+            <m.span
+              layoutId="current-indicator"
+              className="absolute inset-x-2 -bottom-2.5 h-0.5 rounded-full bg-zinc-950 dark:bg-white"
+            />
+          )}
+          {typeof props.href === 'string' ? (
+            <Link
+              {...props}
+              className={classes}
+              data-current={current ? 'true' : undefined}
+              ref={ref as React.ForwardedRef<HTMLAnchorElement>}
+            >
+              <TouchTarget>{children}</TouchTarget>
+            </Link>
+          ) : (
+            <Headless.Button
+              {...props}
+              className={clsx('cursor-default', classes)}
+              data-current={current ? 'true' : undefined}
+              ref={ref}
+            >
+              <TouchTarget>{children}</TouchTarget>
+            </Headless.Button>
+          )}
+        </span>
+      </LazyMotion>
+    </MotionConfig>
   )
 })
 

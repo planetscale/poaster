@@ -16,7 +16,11 @@ function formatRelative(date: Date): string {
   if (seconds < DAY) return `${Math.floor(seconds / HOUR)}h ago`
   if (seconds < DAY * 7) return `${Math.floor(seconds / DAY)}d ago`
 
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 /**
@@ -47,17 +51,19 @@ export const RelativeTime = memo(function RelativeTime({
   className,
 }: RelativeTimeProps) {
   const d = typeof date === 'string' ? new Date(date) : date
+  const timestamp = d.getTime()
 
   /** Tick counter forces re-render on each interval. */
   const [, setTick] = useState(0)
 
   useEffect(() => {
-    const ms = intervalForAge(d)
+    const current = new Date(timestamp)
+    const ms = intervalForAge(current)
     if (ms === null) return
 
-    const id = setInterval(() => setTick((t) => t + 1), ms)
+    const id = setInterval(() => setTick((tick) => tick + 1), ms)
     return () => clearInterval(id)
-  }, [d.getTime()])
+  }, [timestamp])
 
   return (
     <time dateTime={d.toISOString()} className={className}>

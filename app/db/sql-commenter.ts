@@ -7,8 +7,8 @@ import pg from 'pg'
 
 /** Per-request context attached to every SQL query as a trailing comment. */
 interface SqlCommenterContext {
-  /** Traffic Control class: 'crud' | 'analytics' | 'monitor'. */
-  action?: string
+  /** Traffic Control class. Every query sets one. */
+  action: 'crud' | 'analytics' | 'monitor'
   /** Logical query name, e.g. `feedPosts` or `trendingTags`. */
   query?: string
   /** Grouping label for related queries, e.g. `analytics`. */
