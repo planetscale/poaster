@@ -21,12 +21,14 @@ import { fetchFeedItems, getTrendingTags } from '~/db/queries'
 const PAGE_SIZE = 50
 
 /**
- * Client-side fetch timeout. Slightly longer than the pool's
- * `connectionTimeoutMillis` (2s) so the server has time to return
- * a proper 503, but short enough that stalled requests don't pile
- * up across countdown cycles.
+ * Client-side fetch timeout. Under normal conditions, the polling
+ * endpoint responds in ~100-300ms. When the database is genuinely
+ * overloaded by analytics queries (CPU/IO contention), even simple
+ * COUNT queries slow down dramatically. 8 seconds is generous enough
+ * to survive minor hiccups but short enough to surface real DB
+ * degradation within a couple of countdown cycles.
  */
-const FETCH_TIMEOUT_MS = 3_000
+const FETCH_TIMEOUT_MS = 8_000
 
 export function meta() {
   return [
@@ -37,9 +39,10 @@ export function meta() {
 
 /**
  * Number of consecutive polling failures before the feed renders the
- * fail-whale. With a 2-second countdown cycle and a ~3-second pool
- * timeout, this gives roughly 2 visible error toasts before the
- * full error state appears.
+ * fail-whale. Under heavy DB load, the polling endpoint will return
+ * 503 (statement_timeout exceeded) or the fetch will timeout. With
+ * a ~2-second countdown cycle, 3 failures = ~6-10 seconds of visible
+ * degradation before the full error state appears.
  */
 const MAX_CONSECUTIVE_POLL_FAILURES = 3
 
@@ -555,8 +558,12 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     revalidator.revalidate()
   }
 
+  // Throw during render to trigger the root ErrorBoundary (fail-whale).
+  // The error message contains "timeout" so isDatabaseError() matches.
   if (feedUnavailable) {
-    throw new Error('Feed polling timeout — database connections exhausted')
+    throw new Error(
+      'Feed polling timeout — database overwhelmed by analytics queries',
+    )
   }
 
   const loaderKey = initialItems.map(feedItemKey).join(',')

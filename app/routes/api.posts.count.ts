@@ -1,8 +1,15 @@
-import { and, count, gt } from 'drizzle-orm'
+import { pool } from '~/db'
+import { getCommentedClient, sqlCommenter } from '~/db/sql-commenter'
 
-import db from '~/db'
-import { sqlCommenter } from '~/db/sql-commenter'
-import { comments, posts } from '~/db/schema'
+/**
+ * Statement-level timeout for polling queries (in milliseconds).
+ * When the database is overloaded by analytics queries, even simple
+ * COUNT queries compete for CPU/IO. This timeout ensures the polling
+ * endpoint fails fast with a clear "statement timeout" error from
+ * PostgreSQL itself — proving the database is genuinely overwhelmed,
+ * not just that the application ran out of pool connections.
+ */
+const STATEMENT_TIMEOUT_MS = 5_000
 
 /**
  * Resource route — returns the count of new feed items (posts + comments)
@@ -23,26 +30,51 @@ export async function loader({ request }: { request: Request }) {
   const sinceDate = new Date(since)
 
   try {
-    const [postResult, commentResult] = await Promise.all([
-      sqlCommenter.run(
-        { action: 'crud', route: '/api/posts/count', query: 'newPostCount' },
-        () =>
-          db
-            .select({ value: count() })
-            .from(posts)
-            .where(and(gt(posts.createdAt, sinceDate))),
-      ),
-      sqlCommenter.run(
-        { action: 'crud', route: '/api/posts/count', query: 'newCommentCount' },
-        () =>
-          db
-            .select({ value: count() })
-            .from(comments)
-            .where(and(gt(comments.createdAt, sinceDate))),
-      ),
-    ])
+    const result = await sqlCommenter.run(
+      { action: 'crud', route: '/api/posts/count', query: 'newPostCount' },
+      async () => {
+        const client = await getCommentedClient(pool)
+        try {
+          // Wrap in a transaction so SET LOCAL is scoped to this
+          // request and doesn't leak via PgBouncer's connection reuse.
+          await client.query('BEGIN')
+          await client.query(
+            `SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`,
+          )
 
-    const total = (postResult[0]?.value ?? 0) + (commentResult[0]?.value ?? 0)
+          const postResult = await client.query(
+            `SELECT COUNT(*) AS value FROM posts WHERE created_at > $1`,
+            [sinceDate],
+          )
+          const commentResult = await sqlCommenter.run(
+            {
+              action: 'crud',
+              route: '/api/posts/count',
+              query: 'newCommentCount',
+            },
+            () =>
+              client.query(
+                `SELECT COUNT(*) AS value FROM comments WHERE created_at > $1`,
+                [sinceDate],
+              ),
+          )
+
+          await client.query('COMMIT')
+
+          return {
+            posts: parseInt(postResult.rows[0]?.value ?? '0', 10),
+            comments: parseInt(commentResult.rows[0]?.value ?? '0', 10),
+          }
+        } catch (err) {
+          await client.query('ROLLBACK').catch(() => {})
+          throw err
+        } finally {
+          client.release()
+        }
+      },
+    )
+
+    const total = result.posts + result.comments
 
     return Response.json({ count: total })
   } catch (error) {
