@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import type React from 'react'
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import { Link } from './link'
 
 const TableContext = createContext<{
@@ -29,14 +29,13 @@ export function Table({
   grid?: boolean
   striped?: boolean
 } & React.ComponentPropsWithoutRef<'div'>) {
+  const contextValue = useMemo(
+    () => ({ bleed, dense, grid, striped }),
+    [bleed, dense, grid, striped],
+  )
+
   return (
-    <TableContext.Provider
-      value={
-        { bleed, dense, grid, striped } as React.ContextType<
-          typeof TableContext
-        >
-      }
-    >
+    <TableContext.Provider value={contextValue}>
       <div className="flow-root">
         <div
           {...props}
@@ -99,13 +98,13 @@ export function TableRow({
   title?: string
 } & React.ComponentPropsWithoutRef<'tr'>) {
   let { striped } = useContext(TableContext)
+  const rowContextValue = useMemo(
+    () => ({ href, target, title }),
+    [href, target, title],
+  )
 
   return (
-    <TableRowContext.Provider
-      value={
-        { href, target, title } as React.ContextType<typeof TableRowContext>
-      }
-    >
+    <TableRowContext.Provider value={rowContextValue}>
       <tr
         {...props}
         className={clsx(

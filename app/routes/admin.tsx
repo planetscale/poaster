@@ -322,11 +322,15 @@ function ReportCard({ report }: { report: (typeof REPORTS)[number] }) {
       }
     }
 
+    const fetcherByKey = new Map(
+      allFetchers.map((fetcher) => [fetcher.key, fetcher]),
+    )
+
     // Fetchers that just transitioned from loading → idle
     for (const key of prevLoadingKeys.current) {
       if (!currentlyLoading.has(key) && !toastedKeys.current.has(key)) {
         toastedKeys.current.add(key)
-        const fetcher = allFetchers.find((f) => f.key === key)
+        const fetcher = fetcherByKey.get(key)
         const d = fetcher?.data as
           | {
               type: string
@@ -385,6 +389,18 @@ function ReportCard({ report }: { report: (typeof REPORTS)[number] }) {
 // Report result display
 // ---------------------------------------------------------------------------
 
+/** Stable row identity from cell values. Duplicate rows get a suffix. */
+function reportRowKey(
+  row: Record<string, unknown>,
+  columns: string[],
+  seen: Map<string, number>,
+): string {
+  const base = columns.map((column) => String(row[column] ?? '')).join('\u001f')
+  const count = seen.get(base) ?? 0
+  seen.set(base, count + 1)
+  return count === 0 ? base : `${base}\u001f${count}`
+}
+
 function ReportResult({ result }: { result: AnalyticsResult }) {
   const columns =
     result.sampleRows.length > 0 ? Object.keys(result.sampleRows[0]) : []
@@ -417,13 +433,7 @@ function ReportResult({ result }: { result: AnalyticsResult }) {
               </TableRow>
             </TableHead>
             <TableBody>
-              {result.sampleRows.map((row, i) => (
-                <TableRow key={i}>
-                  {columns.map((col) => (
-                    <TableCell key={col}>{formatCellValue(row[col])}</TableCell>
-                  ))}
-                </TableRow>
-              ))}
+              <ReportRows rows={result.sampleRows} columns={columns} />
             </TableBody>
           </Table>
           {result.rowCount > result.sampleRows.length && (
@@ -436,6 +446,24 @@ function ReportResult({ result }: { result: AnalyticsResult }) {
       )}
     </div>
   )
+}
+
+function ReportRows({
+  rows,
+  columns,
+}: {
+  rows: Record<string, unknown>[]
+  columns: string[]
+}) {
+  const seen = new Map<string, number>()
+
+  return rows.map((row) => (
+    <TableRow key={reportRowKey(row, columns, seen)}>
+      {columns.map((column) => (
+        <TableCell key={column}>{formatCellValue(row[column])}</TableCell>
+      ))}
+    </TableRow>
+  ))
 }
 
 /**

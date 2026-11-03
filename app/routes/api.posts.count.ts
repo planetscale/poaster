@@ -1,5 +1,5 @@
 import { pool } from '~/db'
-import { sqlCommenter } from '~/db/sql-commenter'
+import { getCommentedClient, sqlCommenter } from '~/db/sql-commenter'
 
 /**
  * Statement-level timeout for polling queries (in milliseconds).
@@ -31,9 +31,9 @@ export async function loader({ request }: { request: Request }) {
 
   try {
     const result = await sqlCommenter.run(
-      { route: '/api/posts/count', query: 'newPostCount' },
+      { action: 'crud', route: '/api/posts/count', query: 'newPostCount' },
       async () => {
-        const client = await pool.connect()
+        const client = await getCommentedClient(pool)
         try {
           // Wrap in a transaction so SET LOCAL is scoped to this
           // request and doesn't leak via PgBouncer's connection reuse.
@@ -42,16 +42,22 @@ export async function loader({ request }: { request: Request }) {
             `SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`,
           )
 
-          const [postResult, commentResult] = await Promise.all([
-            client.query(
-              `SELECT COUNT(*) AS value FROM posts WHERE created_at > $1`,
-              [sinceDate],
-            ),
-            client.query(
-              `SELECT COUNT(*) AS value FROM comments WHERE created_at > $1`,
-              [sinceDate],
-            ),
-          ])
+          const postResult = await client.query(
+            `SELECT COUNT(*) AS value FROM posts WHERE created_at > $1`,
+            [sinceDate],
+          )
+          const commentResult = await sqlCommenter.run(
+            {
+              action: 'crud',
+              route: '/api/posts/count',
+              query: 'newCommentCount',
+            },
+            () =>
+              client.query(
+                `SELECT COUNT(*) AS value FROM comments WHERE created_at > $1`,
+                [sinceDate],
+              ),
+          )
 
           await client.query('COMMIT')
 

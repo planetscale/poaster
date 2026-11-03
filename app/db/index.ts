@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { drizzle } from 'drizzle-orm/node-postgres'
 
+import { postgresUrlForNode } from './postgres-url'
 import * as schema from './schema'
 import { createCommentedPool } from './sql-commenter'
 
@@ -14,14 +15,20 @@ if (!process.env.DATABASE_URL) {
  * application-side connections through fewer real database connections,
  * so bursts of analytics traffic don't exhaust server-side connection
  * slots and starve CRUD.
+ *
+ * `sslrootcert=system` is removed first. That value tells libpq to use
+ * the OS trust store, but node-postgres treats it as a file path.
  */
 function toPgBouncerUrl(url: string): string {
-  const parsed = new URL(url)
+  const parsed = new URL(postgresUrlForNode(url))
   parsed.port = '6432'
   return parsed.toString()
 }
 
 const pgbouncerUrl = toPgBouncerUrl(process.env.DATABASE_URL)
+
+/** Verify certificates with Node's CA store. */
+const ssl = { rejectUnauthorized: true }
 
 /**
  * CRUD pool — used by the feed, polling endpoints, and all fast-path
@@ -32,7 +39,7 @@ const pgbouncerUrl = toPgBouncerUrl(process.env.DATABASE_URL)
  */
 export const pool = createCommentedPool({
   connectionString: pgbouncerUrl,
-  ssl: true,
+  ssl,
   max: 10,
   connectionTimeoutMillis: 5_000,
 })
@@ -50,7 +57,7 @@ export const pool = createCommentedPool({
  */
 export const analyticsPool = createCommentedPool({
   connectionString: pgbouncerUrl,
-  ssl: true,
+  ssl,
   max: 5,
   connectionTimeoutMillis: 30_000,
 })

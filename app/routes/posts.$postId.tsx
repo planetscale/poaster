@@ -14,18 +14,18 @@ import db from '~/db'
 import { sqlCommenter } from '~/db/sql-commenter'
 import { comments, posts } from '~/db/schema'
 
-export function meta({ data }: Route.MetaArgs) {
-  if (!data?.post) {
+export function meta({ loaderData }: Route.MetaArgs) {
+  if (!loaderData?.post) {
     return [{ title: 'Post not found — Poaster' }]
   }
-  return [{ title: `${data.post.user.name} on Poaster` }]
+  return [{ title: `${loaderData.post.user.name} on Poaster` }]
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
   const postId = Number(params.postId)
 
   const post = await sqlCommenter.run(
-    { route: '/posts/:postId', query: 'postDetail' },
+    { action: 'crud', route: '/posts/:postId', query: 'postDetail' },
     () =>
       db.query.posts.findFirst({
         where: eq(posts.id, postId),
@@ -44,19 +44,22 @@ export async function loader({ params }: Route.LoaderArgs) {
   }
 
   const [postComments, userPostCount] = await Promise.all([
-    sqlCommenter.run({ route: '/posts/:postId', query: 'postComments' }, () =>
-      db.query.comments.findMany({
-        where: eq(comments.postId, postId),
-        orderBy: [asc(comments.createdAt)],
-        with: {
-          user: {
-            columns: { id: true, name: true },
+    sqlCommenter.run(
+      { action: 'crud', route: '/posts/:postId', query: 'postComments' },
+      () =>
+        db.query.comments.findMany({
+          where: eq(comments.postId, postId),
+          orderBy: [asc(comments.createdAt)],
+          with: {
+            user: {
+              columns: { id: true, name: true },
+            },
           },
-        },
-      }),
+        }),
     ),
-    sqlCommenter.run({ route: '/posts/:postId', query: 'userPostCount' }, () =>
-      db.$count(posts, eq(posts.userId, post.user.id)),
+    sqlCommenter.run(
+      { action: 'crud', route: '/posts/:postId', query: 'userPostCount' },
+      () => db.$count(posts, eq(posts.userId, post.user.id)),
     ),
   ])
 

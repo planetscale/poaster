@@ -192,7 +192,7 @@ export async function fetchFeedItems(
     : undefined
 
   const [postRows, commentRows] = await Promise.all([
-    sqlCommenter.run({ route, query: 'feedPosts' }, () =>
+    sqlCommenter.run({ action: 'crud', route, query: 'feedPosts' }, () =>
       db.query.posts.findMany({
         where: beforeFilter ?? afterFilter,
         orderBy: [desc(posts.createdAt)],
@@ -200,7 +200,7 @@ export async function fetchFeedItems(
         with: postCardRelations,
       }),
     ),
-    sqlCommenter.run({ route, query: 'feedComments' }, () =>
+    sqlCommenter.run({ action: 'crud', route, query: 'feedComments' }, () =>
       db.query.comments.findMany({
         where: commentBeforeFilter ?? commentAfterFilter,
         orderBy: [desc(comments.createdAt)],
@@ -228,21 +228,24 @@ export async function fetchFeedItems(
  * @param route - The calling route path, used for SQLCommenter tagging.
  */
 export function getTrendingTags(route: string): Promise<TrendingTag[]> {
-  return sqlCommenter.run({ route, query: 'trendingTags' }, async () => {
-    const rows = await db
-      .select({
-        name: tags.name,
-        postCount: count(postTags.postId),
-      })
-      .from(tags)
-      .innerJoin(postTags, eq(tags.id, postTags.tagId))
-      .groupBy(tags.id, tags.name)
-      .orderBy(desc(count(postTags.postId)))
-      .limit(10)
+  return sqlCommenter.run(
+    { action: 'crud', route, query: 'trendingTags' },
+    async () => {
+      const rows = await db
+        .select({
+          name: tags.name,
+          postCount: count(postTags.postId),
+        })
+        .from(tags)
+        .innerJoin(postTags, eq(tags.id, postTags.tagId))
+        .groupBy(tags.id, tags.name)
+        .orderBy(desc(count(postTags.postId)))
+        .limit(10)
 
-    return rows.map((row) => ({
-      name: row.name,
-      postCount: row.postCount,
-    }))
-  })
+      return rows.map((row) => ({
+        name: row.name,
+        postCount: row.postCount,
+      }))
+    },
+  )
 }

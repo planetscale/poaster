@@ -14,18 +14,18 @@ import {
 import { sqlCommenter } from '~/db/sql-commenter'
 import { posts, users } from '~/db/schema'
 
-export function meta({ data }: Route.MetaArgs) {
-  if (!data?.user) {
+export function meta({ loaderData }: Route.MetaArgs) {
+  if (!loaderData?.user) {
     return [{ title: 'User not found — Poaster' }]
   }
-  return [{ title: `${data.user.name} — Poaster` }]
+  return [{ title: `${loaderData.user.name} — Poaster` }]
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
   const userId = Number(params.userId)
 
   const user = await sqlCommenter.run(
-    { route: '/users/:userId', query: 'user' },
+    { action: 'crud', route: '/users/:userId', query: 'user' },
     () =>
       db.query.users.findFirst({
         where: eq(users.id, userId),
@@ -37,12 +37,14 @@ export async function loader({ params }: Route.LoaderArgs) {
   }
 
   const [userPosts, trending] = await Promise.all([
-    sqlCommenter.run({ route: '/users/:userId', query: 'userPosts' }, () =>
-      db.query.posts.findMany({
-        where: eq(posts.userId, userId),
-        orderBy: [desc(posts.createdAt)],
-        with: postCardRelations,
-      }),
+    sqlCommenter.run(
+      { action: 'crud', route: '/users/:userId', query: 'userPosts' },
+      () =>
+        db.query.posts.findMany({
+          where: eq(posts.userId, userId),
+          orderBy: [desc(posts.createdAt)],
+          with: postCardRelations,
+        }),
     ),
     getTrendingTags('/users/:userId'),
   ])
