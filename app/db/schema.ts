@@ -146,6 +146,7 @@ export const activity = pgTable(
   (t) => [
     index('idx_activity_user').on(t.userId, t.createdAt),
     index('idx_activity_action').on(t.action, t.createdAt),
+    index('idx_activity_target').on(t.targetType, t.targetId, t.createdAt),
     // Deliberately redundant: a left prefix of idx_activity_user, so
     // PlanetScale Insights recommends dropping it.
     index('idx_activity_user_id').on(t.userId),
