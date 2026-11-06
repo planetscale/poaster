@@ -29,6 +29,13 @@
       "when": 1773847884813,
       "tag": "0003_brainy_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793960000000,
+      "tag": "0004_activity_target_index",
+      "breakpoints": true
     }
   ]
 }
