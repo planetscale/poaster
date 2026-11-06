@@ -1,1 +1,0 @@
-CREATE INDEX "idx_activity_target" ON "activity" USING btree ("target_type","target_id","created_at");
