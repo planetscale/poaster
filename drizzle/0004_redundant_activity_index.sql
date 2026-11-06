@@ -1,0 +1,1 @@
+CREATE INDEX "idx_activity_user_id" ON "activity" USING btree ("user_id");
