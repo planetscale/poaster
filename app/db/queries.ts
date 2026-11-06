@@ -1,11 +1,11 @@
-import { count, desc, eq, gt, lt } from 'drizzle-orm'
+import { and, count, desc, eq, gt, lt } from 'drizzle-orm'
 
 import type { CommentCardData } from '~/components/comment-card'
 import type { PostCardData } from '~/components/post-card'
 import type { TrendingTag } from '~/components/trending-topics'
 import db from '~/db'
 import { sqlCommenter } from '~/db/sql-commenter'
-import { comments, posts, postTags, tags } from '~/db/schema'
+import { activity, comments, posts, postTags, tags, users } from '~/db/schema'
 
 // ---------------------------------------------------------------------------
 // Feed item — discriminated union for the unified timeline
@@ -214,6 +214,67 @@ export async function fetchFeedItems(
     postRows as PostRow[],
     commentRows as CommentRow[],
     limit,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Recent activity — post detail
+// ---------------------------------------------------------------------------
+
+/** One row in the post page's recent-activity list. */
+export type RecentActivityItem = {
+  id: number
+  action: string
+  createdAt: string
+  user: { id: number; name: string }
+}
+
+/** How many events to show. The filter is unindexed, so the scan is the cost. */
+const RECENT_ACTIVITY_LIMIT = 20
+
+/**
+ * Latest events for a post.
+ *
+ * Filters `activity` on `target_type` + `target_id`, which have no index.
+ * On a seeded table this is a sequential scan that PlanetScale Insights
+ * can recommend an index for.
+ */
+export function fetchRecentPostActivity(
+  postId: number,
+): Promise<RecentActivityItem[]> {
+  return sqlCommenter.run(
+    {
+      action: 'crud',
+      route: '/posts/:postId',
+      query: 'recentPostActivity',
+    },
+    async () => {
+      const rows = await db
+        .select({
+          id: activity.id,
+          action: activity.action,
+          createdAt: activity.createdAt,
+          userId: activity.userId,
+          userName: users.name,
+        })
+        .from(activity)
+        .leftJoin(users, eq(activity.userId, users.id))
+        .where(
+          and(eq(activity.targetType, 'post'), eq(activity.targetId, postId)),
+        )
+        .orderBy(desc(activity.createdAt))
+        .limit(RECENT_ACTIVITY_LIMIT)
+
+      return rows.map((row) => ({
+        id: row.id,
+        action: row.action,
+        createdAt: row.createdAt.toISOString(),
+        user: {
+          id: row.userId,
+          name: row.userName ?? `User ${row.userId}`,
+        },
+      }))
+    },
   )
 }
 

@@ -335,7 +335,8 @@ export function runRetentionAnalysis(): Promise<AnalyticsResult> {
 
 /**
  * Seed the `activity` table with ~2M rows of synthetic data using
- * `generate_series`. References real user IDs (1–195) and post IDs.
+ * `generate_series`. `user_id` and post `target_id` come from the live
+ * `users` and `posts` tables, so a post page can show its own events.
  * Spreads data across 90 days, 7 action types, 3 target types,
  * 4 client platforms, and random latency values.
  *
@@ -359,18 +360,39 @@ export async function seedActivityData(): Promise<{
       try {
         // Insert 2M rows in a single bulk INSERT using generate_series
         await client.query(`
+          WITH ids AS (
+            SELECT
+              (SELECT array_agg(id) FROM users) AS user_ids,
+              (SELECT count(*)::int FROM users) AS user_count,
+              (SELECT array_agg(id) FROM posts) AS post_ids,
+              (SELECT count(*)::int FROM posts) AS post_count
+          )
           INSERT INTO activity (user_id, action, target_type, target_id, metadata, created_at)
           SELECT
-            (random() * 194 + 1)::integer,
-            (ARRAY['post','comment','like','repost','tag','delete','view'])[floor(random() * 7 + 1)::integer],
-            (ARRAY['post','comment','tag'])[floor(random() * 3 + 1)::integer],
-            (random() * 3155 + 1)::integer,
-            jsonb_build_object(
-              'client', (ARRAY['web','ios','android','api'])[floor(random() * 4 + 1)::integer],
-              'latency_ms', (random() * 2000)::integer
-            ),
-            now() - (random() * interval '90 days')
-          FROM generate_series(1, 2000000)
+            user_id,
+            action,
+            target_type,
+            CASE
+              WHEN target_type = 'post' THEN post_id
+              ELSE other_id
+            END,
+            metadata,
+            created_at
+          FROM (
+            SELECT
+              ids.user_ids[1 + floor(random() * ids.user_count)::int] AS user_id,
+              (ARRAY['post','comment','like','repost','tag','delete','view'])[1 + floor(random() * 7)::int] AS action,
+              (ARRAY['post','comment','tag'])[1 + floor(random() * 3)::int] AS target_type,
+              ids.post_ids[1 + floor(random() * ids.post_count)::int] AS post_id,
+              (random() * 3155 + 1)::int AS other_id,
+              jsonb_build_object(
+                'client', (ARRAY['web','ios','android','api'])[1 + floor(random() * 4)::int],
+                'latency_ms', (random() * 2000)::int
+              ) AS metadata,
+              now() - (random() * interval '90 days') AS created_at
+            FROM generate_series(1, 2000000)
+            CROSS JOIN ids
+          ) seeded
         `)
 
         // Update planner statistics
