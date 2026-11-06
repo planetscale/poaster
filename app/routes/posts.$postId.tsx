@@ -1,16 +1,18 @@
-import { Link } from 'react-router'
 import { asc, eq } from 'drizzle-orm'
+import { Link } from 'react-router'
 
 import type { Route } from './+types/posts.$postId'
 import { CommentCard } from '~/components/comment-card'
 import type { CommentCardData } from '~/components/comment-card'
 import { FeedLayout } from '~/components/feed-layout'
 import { PostActions } from '~/components/post-actions'
+import { RecentActivity } from '~/components/recent-activity'
 import { RelativeTime } from '~/components/relative-time'
 import { UserAvatar } from '~/components/user-avatar'
 import { UserProfileCard } from '~/components/user-profile-card'
 import type { UserProfileCardData } from '~/components/user-profile-card'
 import db from '~/db'
+import { fetchRecentPostActivity } from '~/db/queries'
 import { sqlCommenter } from '~/db/sql-commenter'
 import { comments, posts } from '~/db/schema'
 
@@ -43,7 +45,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     throw new Response('Post not found', { status: 404 })
   }
 
-  const [postComments, userPostCount] = await Promise.all([
+  const [postComments, userPostCount, recentActivity] = await Promise.all([
     sqlCommenter.run(
       { action: 'crud', route: '/posts/:postId', query: 'postComments' },
       () =>
@@ -61,6 +63,7 @@ export async function loader({ params }: Route.LoaderArgs) {
       { action: 'crud', route: '/posts/:postId', query: 'userPostCount' },
       () => db.$count(posts, eq(posts.userId, post.user.id)),
     ),
+    fetchRecentPostActivity(postId),
   ])
 
   const commentData: CommentCardData[] = postComments.map((row) => ({
@@ -87,6 +90,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     },
     author,
     comments: commentData,
+    recentActivity,
   }
 }
 
@@ -95,7 +99,7 @@ export async function loader({ params }: Route.LoaderArgs) {
  * and the author's profile card in the sidebar.
  */
 export default function PostDetail({ loaderData }: Route.ComponentProps) {
-  const { post, author, comments } = loaderData
+  const { post, author, comments, recentActivity } = loaderData
 
   return (
     <FeedLayout sidebar={<UserProfileCard user={author} />}>
@@ -129,6 +133,8 @@ export default function PostDetail({ loaderData }: Route.ComponentProps) {
           tagCount={post.tagCount}
         />
       </article>
+
+      <RecentActivity items={recentActivity} />
 
       {/* Comments */}
       <section>
