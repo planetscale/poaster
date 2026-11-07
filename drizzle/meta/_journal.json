@@ -36,6 +36,13 @@
       "when": 1793961012125,
       "tag": "0004_redundant_activity_index",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794020000000,
+      "tag": "0005_drop_redundant_activity_index",
+      "breakpoints": true
     }
   ]
 }
