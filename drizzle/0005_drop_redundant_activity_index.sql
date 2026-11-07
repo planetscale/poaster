@@ -1,0 +1,1 @@
+DROP INDEX "idx_activity_user_id";
