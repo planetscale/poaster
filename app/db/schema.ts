@@ -80,6 +80,8 @@ export const comments = pgTable(
     index('idx_comments_post_id_created_at').on(t.postId, t.createdAt),
     /** Feed sort: ORDER BY created_at DESC LIMIT N */
     index('idx_comments_created_at').on(t.createdAt.desc()),
+    /** Per-user comment deletes + cascade deletes from users */
+    index('idx_comments_user_id').on(t.userId),
   ],
 )
 
