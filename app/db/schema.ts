@@ -149,6 +149,13 @@ export const activity = pgTable(
     // Deliberately redundant: a left prefix of idx_activity_user, so
     // PlanetScale Insights recommends dropping it.
     index('idx_activity_user_id').on(t.userId),
+    // Serves the post page's recent-activity list (fetchRecentPostActivity),
+    // which filters on target and sorts by created_at.
+    index('idx_activity_on_target_type_target_id_created_at').on(
+      t.targetType,
+      t.targetId,
+      t.createdAt,
+    ),
   ],
 )
 
